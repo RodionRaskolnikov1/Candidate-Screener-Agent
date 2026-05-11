@@ -10,6 +10,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor, Inches
 from dotenv import load_dotenv
 from groq import Groq
+from openai import OpenAI
 
 load_dotenv()
 
@@ -21,12 +22,15 @@ RESUMES_DIR     = BASE_DIR / "resumes"
 REPORTS_DIR     = BASE_DIR / "reports"
 DB_PATH         = BASE_DIR / "screening_results.db"
 JD_PATH         = BASE_DIR / "job_description.txt"
-MODEL           = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL = "meta-llama/llama-3.3-70b-instruct"
 
 RESUMES_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+client = OpenAI(
+    api_key=os.environ.get("OPENROUTER_API_KEY"),
+    base_url="https://openrouter.ai/api/v1"
+)
 
 # ---------------------------------------------------------------------------
 # DATABASE SETUP
@@ -115,11 +119,13 @@ Return only the JSON, no explanation, no markdown fences.
     try:
         response = client.chat.completions.create(
             model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            messages=[{"role": "user", "content": prompt}]
         )
+
         raw = response.choices[0].message.content.strip()
-        # strip markdown fences if model added them anyway
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        
+        
         raw = raw.replace("```json", "").replace("```", "").strip()
         result = json.loads(raw)
         result["filename"] = filename
@@ -327,96 +333,13 @@ def generate_report(job_title: str = "Open Position") -> str:
 
 
 # ---------------------------------------------------------------------------
-# TOOL DEFINITIONS (for the LLM)
-# ---------------------------------------------------------------------------
-
-TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "extract_resume_text",
-            "description": "Extracts text from a resume PDF file. Pass the full file path.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "pdf_path": {"type": "string", "description": "Full path to the PDF file."}
-                },
-                "required": ["pdf_path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "evaluate_candidate",
-            "description": "Evaluates a resume against a job description. Returns structured JSON with score and recommendation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "resume_text":       {"type": "string", "description": "Raw text extracted from the resume."},
-                    "job_description":   {"type": "string", "description": "Full job description text."},
-                    "filename":          {"type": "string", "description": "Original PDF filename for reference."},
-                },
-                "required": ["resume_text", "job_description", "filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_to_db",
-            "description": "Saves a candidate evaluation result dict to the SQLite database.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "result": {"type": "object", "description": "The evaluation result dict from evaluate_candidate."}
-                },
-                "required": ["result"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "generate_report",
-            "description": "Reads all candidates from DB, ranks them, and generates a .docx report.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_title": {"type": "string", "description": "Job title to display in the report header."}
-                },
-                "required": [],
-            },
-        },
-    },
-]
-
-TOOL_MAP = {
-    "extract_resume_text": extract_resume_text,
-    "evaluate_candidate":  evaluate_candidate,
-    "save_to_db":          save_to_db,
-    "generate_report":     generate_report,
-}
-
-
-# ---------------------------------------------------------------------------
 # AGENT LOOP (pure SDK — same pattern as Day 14)
 # ---------------------------------------------------------------------------
-
-def execute_tool(name: str, args: dict):
-    func = TOOL_MAP.get(name)
-    if not func:
-        return f"Unknown tool: {name}"
-    try:
-        return func(**args)
-    except Exception as e:
-        return f"Tool error: {e}"
-
 
 def run_screening():
     # Load job description
     if not JD_PATH.exists():
-        print(f"ERROR: {JD_PATH} not found. Create this file with the job description.")
+        print(f"ERROR: {JD_PATH} not found.")
         return
 
     job_description = JD_PATH.read_text(encoding="utf-8").strip()
@@ -430,99 +353,52 @@ def run_screening():
         print(f"ERROR: No PDF files found in {RESUMES_DIR}")
         return
 
-    # Extract job title (first non-empty line of JD)
+    # Extract job title
     job_title = next(
         (line.strip() for line in job_description.splitlines() if line.strip()),
         "Open Position"
     )
 
     print(f"\n{'='*60}")
-    print(f"  Candidate Screener Agent")
-    print(f"  Position : {job_title}")
-    print(f"  Resumes  : {len(pdf_files)} found")
+    print(" Candidate Screener Agent ")
+    print(f" Position : {job_title}")
+    print(f" Resumes  : {len(pdf_files)} found")
     print(f"{'='*60}\n")
 
-    # Build the instruction for the agent
-    pdf_paths_str = "\n".join(str(p) for p in pdf_files)
-    user_message = f"""
-Screen the following resume PDFs against the provided job description.
+    # Process each resume
+    for i, pdf_path in enumerate(pdf_files, start=1):
+        print(f"[{i}/{len(pdf_files)}] Processing: {pdf_path.name}")
 
-For EACH resume:
-1. Call extract_resume_text with the PDF path
-2. Call evaluate_candidate with the extracted text, job description, and filename
-3. Call save_to_db with the evaluation result
+        # Step 1: Extract
+        resume_text = extract_resume_text(str(pdf_path))
 
-After ALL resumes are processed, call generate_report with job_title="{job_title}".
-
-Resume files to process:
-{pdf_paths_str}
-
-Job description:
-{job_description}
-"""
-
-    conversation_history = [{"role": "user", "content": user_message}]
-
-    system_prompt = (
-        "You are a candidate screening assistant. "
-        "Process each resume file one by one using the tools provided. "
-        "Always extract text first, then evaluate, then save. "
-        "After all resumes are done, generate the report. "
-        "Be thorough and process every single file listed."
-    )
-
-    print("Starting screening...\n")
-
-    # Agent loop
-    while True:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "system", "content": system_prompt}] + conversation_history,
-            tools=TOOL_DEFINITIONS,
-            tool_choice="auto",
-        )
-
-        message = response.choices[0].message
-
-        if message.tool_calls:
-            conversation_history.append({
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in message.tool_calls
-                ],
-            })
-
-            for tc in message.tool_calls:
-                tool_name = tc.function.name
-                tool_args = json.loads(tc.function.arguments)
-
-                print(f"  → {tool_name}({list(tool_args.keys())})")
-                result = execute_tool(tool_name, tool_args)
-                print(f"    {result if isinstance(result, str) else 'OK'}\n")
-
-                conversation_history.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(result) if not isinstance(result, str) else result,
-                })
-
+        if resume_text.startswith("ERROR"):
+            print(f"  Extraction failed: {resume_text}\n")
             continue
 
-        # Final message — agent is done
-        print(f"\n{'='*60}")
-        print("Agent complete.")
-        print(f"{'='*60}")
-        print(f"\n{message.content}")
-        break
+        # Step 2: Evaluate
+        result = evaluate_candidate(
+            resume_text=resume_text,
+            job_description=job_description,
+            filename=pdf_path.name
+        )
+
+        # Step 3: Save
+        db_status = save_to_db(result)
+
+        print(f"  Candidate: {result.get('candidate_name')}")
+        print(f"  Score: {result.get('fit_score')}/10")
+        print(f"  Recommendation: {result.get('recommendation')}")
+        print(f"  {db_status}\n")
+
+    # Final report
+    print("Generating final report...\n")
+    report_status = generate_report(job_title=job_title)
+
+    print(f"\n{'='*60}")
+    print(" Screening Complete ")
+    print(f"{'='*60}")
+    print(report_status)
 
 
 # ---------------------------------------------------------------------------

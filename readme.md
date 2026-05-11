@@ -40,6 +40,7 @@ pip install groq pdfplumber python-docx python-dotenv
 Create a `.env` file:
 ```
 GROQ_API_KEY=your-key-here
+
 ```
 
 ## Usage

@@ -1,26 +1,33 @@
-Python Backend Developer
+Doctor Job Description
+Doctor
 
-We are looking for a skilled Python Backend Developer to join our team.
+We are looking for a qualified and compassionate Doctor to join our healthcare team.
 
 Required Skills:
-- Python (3+ years)
-- FastAPI or Django or Flask
-- PostgreSQL or MySQL
-- REST API design
-- Git version control
-- Basic understanding of Docker
-
+MBBS or relevant medical degree
+Valid medical license and registration
+Strong diagnostic and patient care skills
+Knowledge of medical procedures and treatments
+Good communication and interpersonal skills
+Ability to maintain accurate medical records
+Basic understanding of healthcare software and systems
 Nice to Have:
-- Machine Learning or data science experience
-- Redis or message queues (Celery, RabbitMQ)
-- AWS or cloud deployment experience
-- SQLAlchemy or ORM experience
-
+Specialization in a specific medical field
+Experience with emergency care or critical care
+Knowledge of telemedicine practices
+Experience working with multidisciplinary healthcare teams
+Familiarity with modern diagnostic equipment
 Responsibilities:
-- Design and build scalable REST APIs
-- Write clean, tested, documented code
-- Collaborate with frontend and ML teams
-- Participate in code reviews
+Diagnose and treat patients effectively
+Prescribe medications and treatment plans
+Maintain patient records and documentation
+Collaborate with nurses and healthcare staff
+Provide guidance on preventive healthcare
+Participate in medical reviews and healthcare planning
+Experience:
 
-Experience: 1-3 years
-Location: Ahmedabad / Remote
+1-3 years
+
+Location:
+
+Ahmedabad / Remote
