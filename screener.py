@@ -9,9 +9,11 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor, Inches
 from dotenv import load_dotenv
-from groq import Groq
 from openai import OpenAI
 
+from docx.oxml.ns import qn
+from docx.oxml    import OxmlElement
+            
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -125,8 +127,6 @@ Return only the JSON, no explanation, no markdown fences.
         raw = response.choices[0].message.content.strip()
         raw = raw.replace("```json", "").replace("```", "").strip()
         
-        
-        raw = raw.replace("```json", "").replace("```", "").strip()
         result = json.loads(raw)
         result["filename"] = filename
         return result
@@ -158,6 +158,13 @@ def save_to_db(result: dict) -> str:
     Returns confirmation string.
     """
     try:
+        existing = conn.execute(
+            "SELECT id FROM candidates WHERE filename = ?", (result["filename"],)
+        ).fetchone()
+        if not existing:
+            conn.execute("INSERT INTO candidates ...")
+            
+            
         conn = sqlite3.connect(DB_PATH)
         conn.execute("""
             INSERT INTO candidates
@@ -310,8 +317,7 @@ def generate_report(job_title: str = "Open Position") -> str:
 
             # Divider (empty paragraph with bottom border)
             div = doc.add_paragraph()
-            from docx.oxml.ns import qn
-            from docx.oxml    import OxmlElement
+            
             pPr = div._p.get_or_add_pPr()
             pBdr = OxmlElement("w:pBdr")
             bottom = OxmlElement("w:bottom")
